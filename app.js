@@ -11,13 +11,17 @@
   const LEGEND_PAD = 8;
   const LEGEND_RX = 6;
   const PLOT_FONT_SIZE = 10; // px for value labels
+  // Line chart point styling
+  const POINT_RADIUS = 6; // increased point size for PIT/VAT
+  const POINT_LABEL_DY = -8; // lift labels slightly to avoid overlap
+  const POINT_LABEL_DX = 6; // shift labels to the right of the point
   // CIT bar sizing
   const BAR_MIN = 36;
   const BAR_MAX = 160;
   const BAR_FRACTION = 0.85; // fraction of category spacing
 
   // Brand colors for year lines
-  const BRAND = { now: '#c0392b', last: '#ffe2deff' };
+  const BRAND = { now: '#c32817ff', last: '#ffe2deff' };
 
   const container = d3.select('#chart');
   const svg = container
@@ -251,7 +255,7 @@
       pts.enter()
         .append('circle')
         .attr('class', 'pt')
-        .attr('r', 3)
+  .attr('r', POINT_RADIUS)
         .attr('fill', d => d.color)
         .on('mousemove', function(event, d){
           const v = fmt(d.value, meta.currency || '');
@@ -268,13 +272,16 @@
       labels.enter()
         .append('text')
         .attr('class', 'pt-label')
-        .attr('text-anchor', 'middle')
-        .attr('dy', -6)
+        .attr('text-anchor', 'start')
+        .attr('dy', POINT_LABEL_DY)
+        .attr('dx', POINT_LABEL_DX)
   .style('font-size', `${PLOT_FONT_SIZE}px`)
         .style('fill', '#333')
         .merge(labels)
         .attr('x', d => x(d.x))
         .attr('y', d => y(d.value))
+        .attr('dx', POINT_LABEL_DX)
+        .attr('text-anchor', 'start')
         .text(d => fmt(d.value));
       labels.exit().remove();
 
