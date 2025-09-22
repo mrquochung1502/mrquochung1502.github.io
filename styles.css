@@ -27,7 +27,7 @@ svg{width:100%;height:100%}
 /* Summary table */
 .summary{padding:10px var(--page-pad)}
 .summary .notes{margin-top:12px}
-.summary .notes .notes-title{font-weight:700;text-align:center;margin:6px 0 10px 0;font-size:16px}
+.summary .notes .notes-title{font-weight:700;text-align:center;margin:6px 0 10px 0;font-size:18px}
 .summary .notes .notes-groups{display:grid;grid-template-columns:1fr 1fr;gap:20px}
 .summary .notes .notes-group h4{margin:0 0 6px 0;font-size:14px;text-align:center}
 .summary .notes ul{margin:0;padding-left:18px}
@@ -43,7 +43,7 @@ svg{width:100%;height:100%}
 .arrow{font-size:1em;line-height:1;vertical-align:middle}
 .arrow-up{color:#c0392b}
 .arrow-down{color:#27ae60}
-.diag{display:inline-flex;align-items:center;gap:6px}
+.diag{display:inline-flex;align-items:center;gap:8px}
 .summary td.diag{display:table-cell !important;text-align:center}
-.diag-dot{width:14px;height:14px;border-radius:50%;display:inline-block;vertical-align:middle}
+.diag-dot{width:16px;height:16px;border-radius:50%;display:inline-block;vertical-align:middle}
 .diag-yellow{background:#f1c40f}

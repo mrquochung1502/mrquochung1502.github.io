@@ -208,11 +208,15 @@
       // x-domain uses only years we have data for
       x.domain(citBarsData.map(d => d.x));
 
-      // Legend shows two swatches: This year, Last year (collective previous years)
-      series = latestYear != null ? [
-        { year: latestYear, key, color: BRAND.now, data: [] },
-        { year: latestYear - 1, key, color: BRAND.last, data: [] }
-      ] : [];
+      // Legend: always include 'This year'; include 'Last year/recent years' only if there is at least one prior year
+      if (latestYear != null) {
+        series = [{ year: latestYear, key, color: BRAND.now, data: [] }];
+        if ((citBarsData || []).some(d => d.year !== latestYear)) {
+          series.push({ year: latestYear - 1, key, color: BRAND.last, data: [] });
+        }
+      } else {
+        series = [];
+      }
     }
 
     // Update Y for the active key across all years
@@ -373,7 +377,19 @@
   mergedItems.attr('transform', (d,i) => `translate(0, ${i * itemHeight})`);
   mergedItems.select('rect').attr('fill', d => d.color);
   // label using dynamic latest year for clarity across CIT and other series
-  mergedItems.select('text').text(d => (d.year === legendLatestYear ? 'This year' : 'Last year'));
+  mergedItems.select('text').text(d => {
+    if (isCIT) {
+      const isLatest = d.year === legendLatestYear;
+      const countYears = (citBarsData || []).length;
+      if (isLatest) {
+        const latest = (citBarsData || []).find(b => b.year === legendLatestYear);
+        const prov = latest && latest.provisional;
+        return `This year${prov ? ' (Provisional)' : ''}`;
+      }
+      return countYears > 2 ? 'Last recent years' : 'Last year';
+    }
+    return d.year === legendLatestYear ? 'This year' : 'Last year';
+  });
   items.exit().remove();
 
   // Legend frame box sized to content
@@ -425,22 +441,25 @@
   if (table.empty()) {
     table = summarySel.append('table');
   const thead = table.append('thead').append('tr');
-  ['Last quarter', 'This quarter', 'Difference', 'Diagnose'].forEach((h,i) => {
+  const headers = (activeKey === 'CIT')
+    ? ['Last year', 'This year', '', 'Diagnose']
+    : ['Last quarter', 'This quarter', '', 'Diagnose'];
+  headers.forEach((h,i) => {
       const th = thead.append('th').text(h);
       if (h !== 'Diagnose') th.attr('class','num');
     });
     table.append('tbody');
   } else {
-    // ensure header matches (in case of earlier version)
-    const headerCells = table.select('thead').selectAll('th');
-    if (headerCells.size() !== 4) {
-      table.select('thead').remove();
-  const thead = table.insert('thead', 'tbody').append('tr');
-  ['Last quarter', 'This quarter', 'Difference', 'Diagnose'].forEach((h,i) => {
-        const th = thead.append('th').text(h);
-        if (h !== 'Diagnose') th.attr('class','num');
-      });
-    }
+    // Always rebuild header to reflect active series semantics (CIT uses years)
+    table.select('thead').remove();
+    const thead = table.insert('thead', 'tbody').append('tr');
+    const headers = (activeKey === 'CIT')
+      ? ['Last year', 'This year', '', 'Diagnose']
+      : ['Last quarter', 'This quarter', '', 'Diagnose'];
+    headers.forEach((h,i) => {
+      const th = thead.append('th').text(h);
+      if (h !== 'Diagnose') th.attr('class','num');
+    });
   }
   const tbody = table.select('tbody');
   const rowsSel = tbody.selectAll('tr').data(summary);
