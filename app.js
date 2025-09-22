@@ -5,6 +5,17 @@
   const width = 960; // responsive via viewBox
   const height = 480;
 
+  // Readability constants (no behavior change)
+  const DUR = 300; // ms, transition duration
+  const GRID_OPACITY = 0.5;
+  const LEGEND_PAD = 8;
+  const LEGEND_RX = 6;
+  const PLOT_FONT_SIZE = 10; // px for value labels
+  // CIT bar sizing
+  const BAR_MIN = 36;
+  const BAR_MAX = 160;
+  const BAR_FRACTION = 0.85; // fraction of category spacing
+
   // Brand colors for year lines
   const BRAND = { now: '#c0392b', last: '#ffe2deff' };
 
@@ -82,7 +93,7 @@
     .attr('class', 'grid')
     .call(d3.axisLeft(y).tickSize(-innerW).tickFormat(''))
     .selectAll('line')
-    .attr('opacity', 0.5);
+  .attr('opacity', GRID_OPACITY);
 
   // Generators and UI
   const lineGen = d3.line()
@@ -114,6 +125,24 @@
     tableSel.style('width', `${targetW}px`)
       .style('margin-left', `${leftPx}px`)
       .style('margin-right', `${rightPx}px`);
+  }
+
+  // Small pure helpers (keep logic identical; improves readability)
+  function computeCITYears(rows){
+    return Array.from(new Set(rows.filter(r => r.key === 'CIT').map(r => r.year)))
+      .sort((a,b)=>a-b)
+      .slice(-4);
+  }
+  function pickCITForYear(byMap, year){
+    for (const q of ['Q4','Q3','Q2','Q1']){
+      const v = byMap.get(`${year}-${q}-CIT`);
+      if (v != null) return { value: v, quarter: q, provisional: q !== 'Q4' };
+    }
+    return null;
+  }
+  function calcBarWidth(positions, innerPlotW){
+    const dx = positions.length >= 2 ? (positions[1] - positions[0]) : innerPlotW * 0.25;
+    return Math.max(BAR_MIN, Math.min(BAR_MAX, dx * BAR_FRACTION));
   }
 
   // Tabs to switch single series view
@@ -155,24 +184,12 @@
       legendLatestYear = Math.max(...years);
     } else {
       // CIT: annual axis, up to last 4 available years (now and previous 3)
-      const allCITYears = Array.from(new Set(
-        jsonRows.filter(r => r.key === 'CIT').map(r => r.year)
-      )).sort((a,b)=>a-b);
-      const axisYears = allCITYears.slice(-4); // last up to 4
+      const axisYears = computeCITYears(jsonRows); // last up to 4 years
       const latestYear = axisYears.length ? axisYears[axisYears.length - 1] : null;
       legendLatestYear = latestYear;
 
-      // pick value for each year: prefer Q4 else closest to year end
-      function pickForYear(y){
-        for (const q of ['Q4','Q3','Q2','Q1']){
-          const v = byYQK.get(`${y}-${q}-${key}`);
-          if (v != null) return { value: v, quarter: q, provisional: q !== 'Q4' };
-        }
-        return null;
-      }
-
       citBarsData = axisYears.map(y => {
-        const picked = pickForYear(y);
+        const picked = pickCITForYear(byYQK, y);
         if (!picked) return null;
         return {
           x: String(y),
@@ -212,9 +229,9 @@
       }
 
   // update axes with transition
-  plot.select('.axis.y').transition().duration(300).call(d3.axisLeft(y).ticks(6).tickFormat(d => fmt(d)));
-  plot.select('.axis.x').transition().duration(300).call(d3.axisBottom(x));
-    plot.select('.grid').transition().duration(300).call(d3.axisLeft(y).tickSize(-innerW).tickFormat(''));
+  plot.select('.axis.y').transition().duration(DUR).call(d3.axisLeft(y).ticks(6).tickFormat(d => fmt(d)));
+  plot.select('.axis.x').transition().duration(DUR).call(d3.axisBottom(x));
+    plot.select('.grid').transition().duration(DUR).call(d3.axisLeft(y).tickSize(-innerW).tickFormat(''));
 
   if (!isCIT) {
       // Lines and points for PIT/VAT
@@ -253,7 +270,7 @@
         .attr('class', 'pt-label')
         .attr('text-anchor', 'middle')
         .attr('dy', -6)
-        .style('font-size', '10px')
+  .style('font-size', `${PLOT_FONT_SIZE}px`)
         .style('fill', '#333')
         .merge(labels)
         .attr('x', d => x(d.x))
@@ -268,9 +285,8 @@
       const barsData = citBarsData || [];
 
       // Compute bar width based on spacing
-      const positions = barsData.map(b => x(b.x)).filter(v => v != null);
-  const dx = positions.length >= 2 ? (positions[1] - positions[0]) : innerW * 0.25;
-  const barW = Math.max(36, Math.min(160, dx * 0.85));
+    const positions = barsData.map(b => x(b.x)).filter(v => v != null);
+  const barW = calcBarWidth(positions, innerW);
 
       const bars = plot.selectAll('.bar-cit').data(barsData, d => `${key}-${d.year}`);
       const barsEnter = bars.enter().append('rect').attr('class','bar-cit')
@@ -288,7 +304,7 @@
       barsEnter.merge(bars)
         .attr('x', d => x(d.x) - barW/2)
         .attr('width', barW)
-        .transition().duration(300)
+  .transition().duration(DUR)
         .attr('y', d => Math.min(y(d.value), y(0)))
         .attr('height', d => Math.abs(y(d.value) - y(0)));
       bars.exit().remove();
@@ -297,7 +313,7 @@
       const barLabels = plot.selectAll('.bar-label').data(barsData, d => `${key}-${d.year}`);
       const blEnter = barLabels.enter().append('text').attr('class','bar-label')
         .attr('text-anchor','middle')
-        .style('font-size','10px')
+  .style('font-size', `${PLOT_FONT_SIZE}px`)
         .style('fill','#333');
       const blMerged = blEnter.merge(barLabels)
         .attr('x', d => x(d.x))
@@ -340,7 +356,7 @@
   items.exit().remove();
 
   // Legend frame box sized to content
-  const padBox = 8;
+  const padBox = LEGEND_PAD;
   const bb = contentG.node().getBBox();
   let frame = legendG.select('rect.legend-frame');
   if (frame.empty()) {
@@ -351,8 +367,8 @@
     .attr('y', bb.y - padBox)
     .attr('width', Math.max(0, bb.width + padBox * 2))
     .attr('height', Math.max(0, bb.height + padBox * 2))
-    .attr('rx', 6)
-    .attr('ry', 6)
+    .attr('rx', LEGEND_RX)
+    .attr('ry', LEGEND_RX)
     .attr('fill', '#ffffff')
     .attr('stroke', '#dddddd');
   

@@ -1,9 +1,10 @@
+/* Base reset */
 *{box-sizing:border-box}
 :root{--font-main:'EB Garamond', Garamond, 'Times New Roman', serif;--page-pad:20px}
 html,body{font-family:var(--font-main);margin:0;color:#222;background:#fafafa}
-/* Ensure all controls inherit Garamond */
+/* Typography inheritance */
 button,input,select,textarea,.tab,.tooltip{font-family:var(--font-main)}
-/* Ensure all SVG text uses Garamond */
+/* SVG text font */
 svg text{font-family:var(--font-main)}
 header{padding:16px var(--page-pad);background:#fff;border-bottom:1px solid #eee}
 header h1{margin:0;font-size:20px}
@@ -13,6 +14,7 @@ header h1{margin:0;font-size:20px}
 .tab{padding:6px 10px;border:1px solid #ddd;border-bottom:none;border-radius:6px 6px 0 0;background:#f2f2f2;cursor:pointer}
 .tab.active{background:#fff;border-color:#ccc;font-weight:600}
 .tab.disabled{opacity:.5;cursor:not-allowed}
+/* Chart container */
 #chart{height:520px;padding:0 var(--page-pad)}
 svg{width:100%;height:100%}
 .axis path,.axis line{stroke:#ccc}
