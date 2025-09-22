@@ -240,14 +240,28 @@
   if (!isCIT) {
       // Lines and points for PIT/VAT
       const lines = plot.selectAll('.series').data(series, d => `${d.key}-${d.year}`);
-      lines.enter()
+      const linesEnter = lines.enter()
         .append('path')
         .attr('class', 'series')
         .attr('fill', 'none')
         .attr('stroke-width', 2)
-        .attr('stroke', d => d.color)
-        .merge(lines)
+        .attr('stroke', d => d.color);
+      const linesMerged = linesEnter.merge(lines)
         .attr('d', d => lineGen(d.data));
+      // animate stroke drawing from left to right
+      linesMerged.each(function(){
+        try {
+          const total = this.getTotalLength();
+          if (!isFinite(total) || total <= 0) return;
+          d3.select(this)
+            .attr('stroke-dasharray', `${total} ${total}`)
+            .attr('stroke-dashoffset', total)
+            .transition()
+            .duration(DUR)
+            .ease(d3.easeCubicInOut)
+            .attr('stroke-dashoffset', 0);
+        } catch (e) { /* ignore */ }
+      });
       lines.exit().remove();
 
       const flatPoints = series.flatMap(s => s.data.filter(p => p.value != null).map(p => ({...p, seriesKey: s.key, year: s.year, color: s.color})));
