@@ -1,11 +1,12 @@
 // Wrap everything so we can load data first
 (async function main(){
   // Basic config
-  const margin = { top: 20, right: 24, bottom: 40, left: 80 };
+  const margin = { top: 20, right: 160, bottom: 40, left: 80 };
   const width = 960; // responsive via viewBox
   const height = 480;
 
-  const colors = { PIT: '#f39c12', VAT: '#27ae60', CIT: '#2980b9' };
+  // Brand colors for year lines
+  const BRAND = { now: '#c0392b', last: '#ffe2deff' };
 
   const container = d3.select('#chart');
   const svg = container
@@ -35,9 +36,17 @@
     seriesKeys.map(k => ({ year: +d.year, quarter: String(d.quarter), key: k, value: d[k] == null ? null : +d[k] }))
   )).filter(r => r.value != null);
 
+  // Formatter: negatives in parentheses, thousands with commas; optional currency suffix for tooltips
+  const fmt = (n, currencySuffix = '') => {
+    if (n == null || Number.isNaN(n)) return '';
+    const base = Math.abs(n).toLocaleString('en-US');
+    const suf = currencySuffix ? ` ${currencySuffix}` : '';
+    return n < 0 ? `(${base}${suf})` : `${base}${suf}`;
+  };
+
   let years = Array.from(new Set(jsonRows.map(d => d.year))).sort((a,b)=>a-b);
-  // Keep only last year and current year (2024, 2025)
-  years = years.filter(y => y === 2024 || y === 2025);
+  // Keep only last year and current year (2024, 2025) and order as Now (2025) first
+  years = [2025, 2024].filter(y => years.includes(y));
   const quarters = ['Q1','Q2','Q3','Q4'];
   const x = d3.scalePoint().domain(quarters).range([0, innerW]).padding(0.5);
 
@@ -67,7 +76,7 @@
 
   plot.append('g')
     .attr('class', 'axis y')
-    .call(d3.axisLeft(y).ticks(6).tickFormat(d3.format(',')));
+  .call(d3.axisLeft(y).ticks(6).tickFormat(d => fmt(d)));
 
   plot.append('g')
     .attr('class', 'grid')
@@ -90,107 +99,374 @@
   }
   function hideTooltip() { tooltip.style('opacity', 0); }
 
+  // Layout helper: make summary table match the chart's inner plot width (exclude left/right margins)
+  function layoutSummary(tableSel){
+    if (!tableSel || tableSel.empty()) return;
+    const svgEl = svg.node();
+    const summaryEl = d3.select('#summary').node();
+    if (!svgEl || !summaryEl) return;
+    const svgW = svgEl.getBoundingClientRect().width;
+    const summaryW = summaryEl.getBoundingClientRect().width;
+    const scale = svgW / width; // viewBox scale factor
+    const leftPx = margin.left * scale;
+    const rightPx = margin.right * scale;
+    const targetW = Math.max(0, summaryW - leftPx - rightPx);
+    tableSel.style('width', `${targetW}px`)
+      .style('margin-left', `${leftPx}px`)
+      .style('margin-right', `${rightPx}px`);
+  }
+
   // Tabs to switch single series view
   const tabs = d3.select('#tabs');
-  let activeKey = seriesKeys[0];
+  const keyHasData = Object.fromEntries(seriesKeys.map(k => [k, rows.some(r => r[k] != null)]));
+  const tabsData = seriesKeys.map(k => ({ key: k, enabled: keyHasData[k] }));
+  let activeKey = (tabsData.find(d => d.enabled) || tabsData[0]).key;
   const tabSel = tabs.selectAll('.tab')
-    .data(seriesKeys)
+    .data(tabsData)
     .enter()
     .append('button')
-    .attr('class', d => `tab ${d === activeKey ? 'active' : ''}`)
-    .text(d => d)
-    .on('click', (e, key) => {
-      activeKey = key;
-      tabSel.classed('active', d => d === activeKey);
+    .attr('class', d => `tab ${d.key === activeKey ? 'active' : ''} ${d.enabled ? '' : 'disabled'}`)
+    .text(d => d.key)
+    .on('click', (e, d) => {
+      if (!d.enabled) return;
+      activeKey = d.key;
+      tabSel.classed('active', x => x.key === activeKey);
       draw();
     });
 
   function draw() {
     const key = activeKey;
-    // Build one line per year, x is quarters only
-    const brandRed = '#c0392b'; // PCA logo red
-    const lightRed = '#e67e73'; // lighter red
-    const yearColor = y => (y === 2025 ? brandRed : lightRed);
+    const isCIT = key === 'CIT';
+    // Build one line per year.
+    const yearColor = y => (y === 2025 ? BRAND.now : BRAND.last);
 
-    const series = years.map(y => ({
-      year: y,
-      key,
-      color: yearColor(y),
-      data: quarters.map(q => ({ x: q, value: byYQK.get(`${y}-${q}-${key}`) ?? null }))
-    }));
+    let series; // used for legend items
+    let citBarsData = null; // used only for CIT rendering & scales
+    let legendLatestYear = null; // for dynamic legend labels
+    if (!isCIT) {
+      // Quarterly axis
+      x.domain(quarters);
+      series = years.map(y => ({
+        year: y,
+        key,
+        color: yearColor(y),
+        data: quarters.map(q => ({ x: q, value: byYQK.get(`${y}-${q}-${key}`) ?? null }))
+      }));
+      legendLatestYear = Math.max(...years);
+    } else {
+      // CIT: annual axis, up to last 4 available years (now and previous 3)
+      const allCITYears = Array.from(new Set(
+        jsonRows.filter(r => r.key === 'CIT').map(r => r.year)
+      )).sort((a,b)=>a-b);
+      const axisYears = allCITYears.slice(-4); // last up to 4
+      const latestYear = axisYears.length ? axisYears[axisYears.length - 1] : null;
+      legendLatestYear = latestYear;
+
+      // pick value for each year: prefer Q4 else closest to year end
+      function pickForYear(y){
+        for (const q of ['Q4','Q3','Q2','Q1']){
+          const v = byYQK.get(`${y}-${q}-${key}`);
+          if (v != null) return { value: v, quarter: q, provisional: q !== 'Q4' };
+        }
+        return null;
+      }
+
+      citBarsData = axisYears.map(y => {
+        const picked = pickForYear(y);
+        if (!picked) return null;
+        return {
+          x: String(y),
+          year: y,
+          value: picked.value,
+          quarter: picked.quarter,
+          provisional: picked.provisional,
+          color: (y === latestYear ? BRAND.now : BRAND.last)
+        };
+      }).filter(Boolean);
+
+      // x-domain uses only years we have data for
+      x.domain(citBarsData.map(d => d.x));
+
+      // Legend shows two swatches: This year, Last year (collective previous years)
+      series = latestYear != null ? [
+        { year: latestYear, key, color: BRAND.now, data: [] },
+        { year: latestYear - 1, key, color: BRAND.last, data: [] }
+      ] : [];
+    }
 
     // Update Y for the active key across all years
-    const values = series.flatMap(s => s.data.map(d => d.value).filter(v => v != null));
-    const [minV, maxV] = d3.extent(values);
-    const pad = ((maxV - minV) * 0.08) || 1;
-    y.domain([minV - pad, maxV + pad]).nice();
+    const values = isCIT
+      ? (citBarsData ? citBarsData.map(d => d.value).filter(v => v != null) : [])
+      : series.flatMap(s => s.data.map(d => d.value).filter(v => v != null));
+    if (!values.length) {
+      plot.selectAll('.series,.pt,.pt-label').remove();
+      return;
+    }
+      const [minV, maxV] = d3.extent(values);
+      if (isCIT) {
+        const padTop = ((maxV - 0) * 0.08) || 1;
+        y.domain([0, maxV + padTop]).nice();
+      } else {
+        const pad = ((maxV - minV) * 0.08) || 1;
+        y.domain([minV - pad, maxV + pad]).nice();
+      }
 
-    // update axes with transition
-    plot.select('.axis.y').transition().duration(300).call(d3.axisLeft(y).ticks(6).tickFormat(d3.format(',')));
+  // update axes with transition
+  plot.select('.axis.y').transition().duration(300).call(d3.axisLeft(y).ticks(6).tickFormat(d => fmt(d)));
+  plot.select('.axis.x').transition().duration(300).call(d3.axisBottom(x));
     plot.select('.grid').transition().duration(300).call(d3.axisLeft(y).tickSize(-innerW).tickFormat(''));
 
-  const lines = plot.selectAll('.series').data(series, d => `${d.key}-${d.year}`);
+  if (!isCIT) {
+      // Lines and points for PIT/VAT
+      const lines = plot.selectAll('.series').data(series, d => `${d.key}-${d.year}`);
+      lines.enter()
+        .append('path')
+        .attr('class', 'series')
+        .attr('fill', 'none')
+        .attr('stroke-width', 2)
+        .attr('stroke', d => d.color)
+        .merge(lines)
+        .attr('d', d => lineGen(d.data));
+      lines.exit().remove();
 
-    lines.enter()
-      .append('path')
-      .attr('class', 'series')
-      .attr('fill', 'none')
-  .attr('stroke-width', 2)
-  .attr('stroke', d => d.color)
-  .merge(lines)
-  .attr('d', d => lineGen(d.data));
+      const flatPoints = series.flatMap(s => s.data.filter(p => p.value != null).map(p => ({...p, seriesKey: s.key, year: s.year, color: s.color})));
+      const pts = plot.selectAll('.pt').data(flatPoints, d => `${d.seriesKey}-${d.year}-${d.x}`);
+      pts.enter()
+        .append('circle')
+        .attr('class', 'pt')
+        .attr('r', 3)
+        .attr('fill', d => d.color)
+        .on('mousemove', function(event, d){
+          const v = fmt(d.value, meta.currency || '');
+          showTooltip(`<strong>${key} • ${d.year}</strong><br>${d.x}: ${v}`, event);
+        })
+        .on('mouseleave', hideTooltip)
+        .merge(pts)
+        .attr('cx', d => x(d.x))
+        .attr('cy', d => y(d.value));
+      pts.exit().remove();
 
-    lines.exit().remove();
+      // Labels on each point
+      const labels = plot.selectAll('.pt-label').data(flatPoints, d => `${d.seriesKey}-${d.year}-${d.x}`);
+      labels.enter()
+        .append('text')
+        .attr('class', 'pt-label')
+        .attr('text-anchor', 'middle')
+        .attr('dy', -6)
+        .style('font-size', '10px')
+        .style('fill', '#333')
+        .merge(labels)
+        .attr('x', d => x(d.x))
+        .attr('y', d => y(d.value))
+        .text(d => fmt(d.value));
+      labels.exit().remove();
 
-  const flatPoints = series.flatMap(s => s.data.filter(p => p.value != null).map(p => ({...p, seriesKey: s.key, year: s.year, color: s.color})));
-  const pts = plot.selectAll('.pt').data(flatPoints, d => `${d.seriesKey}-${d.year}-${d.x}`);
+      // Remove CIT bars if any from previous state
+      plot.selectAll('.bar-cit,.bar-label').remove();
+    } else {
+      // Bars for CIT (annual)
+      const barsData = citBarsData || [];
 
-    pts.enter()
-      .append('circle')
-      .attr('class', 'pt')
-      .attr('r', 3)
-      .attr('fill', d => d.color)
-      .on('mousemove', function(event, d){
-        const v = d.value.toLocaleString('en-US');
-        showTooltip(`<strong>${key} • ${d.year}</strong><br>${d.x}: ${v} ${meta.currency || ''}`, event);
-      })
-      .on('mouseleave', hideTooltip)
-      .merge(pts)
-      .attr('cx', d => x(d.x))
-      .attr('cy', d => y(d.value));
+      // Compute bar width based on spacing
+      const positions = barsData.map(b => x(b.x)).filter(v => v != null);
+  const dx = positions.length >= 2 ? (positions[1] - positions[0]) : innerW * 0.25;
+  const barW = Math.max(36, Math.min(160, dx * 0.85));
 
-    pts.exit().remove();
+      const bars = plot.selectAll('.bar-cit').data(barsData, d => `${key}-${d.year}`);
+      const barsEnter = bars.enter().append('rect').attr('class','bar-cit')
+        .attr('x', d => x(d.x) - barW/2)
+        .attr('width', barW)
+        .attr('y', y(0))
+        .attr('height', 0)
+        .attr('fill', d => d.color)
+        .on('mousemove', function(event, d){
+          const v = fmt(d.value, meta.currency || '');
+            const prov = d.provisional ? `<br>(Provisional – ${d.quarter})` : '';
+          showTooltip(`<strong>${key} • ${d.year}</strong><br>${d.x}: ${v}${prov}`, event);
+        })
+        .on('mouseleave', hideTooltip);
+      barsEnter.merge(bars)
+        .attr('x', d => x(d.x) - barW/2)
+        .attr('width', barW)
+        .transition().duration(300)
+        .attr('y', d => Math.min(y(d.value), y(0)))
+        .attr('height', d => Math.abs(y(d.value) - y(0)));
+      bars.exit().remove();
 
-    // Labels on each point
-    const labels = plot.selectAll('.pt-label').data(flatPoints, d => `${d.seriesKey}-${d.year}-${d.x}`);
-    labels.enter()
-      .append('text')
-      .attr('class', 'pt-label')
-      .attr('text-anchor', 'middle')
-      .attr('dy', -6)
-      .style('font-size', '10px')
-      .style('fill', '#333')
-      .merge(labels)
-      .attr('x', d => x(d.x))
-      .attr('y', d => y(d.value))
-      .text(d => d.value.toLocaleString('en-US'));
-    labels.exit().remove();
+      // Labels on bars (two lines when provisional)
+      const barLabels = plot.selectAll('.bar-label').data(barsData, d => `${key}-${d.year}`);
+      const blEnter = barLabels.enter().append('text').attr('class','bar-label')
+        .attr('text-anchor','middle')
+        .style('font-size','10px')
+        .style('fill','#333');
+      const blMerged = blEnter.merge(barLabels)
+        .attr('x', d => x(d.x))
+        .attr('y', d => y(d.value) - 18)
+        .each(function(d){
+          const t = d3.select(this);
+          t.selectAll('tspan').remove();
+          t.append('tspan').text(fmt(d.value));
+          if (d.provisional) t.append('tspan').attr('x', x(d.x)).attr('dy', '1.2em').text(`(Provisional – ${d.quarter})`);
+        });
+      barLabels.exit().remove();
 
-    // Year legend
-    const legend = svg.selectAll('.year-legend').data([0]);
-    const legendGEnter = legend.enter().append('g').attr('class', 'year-legend');
-    const legendG = legendGEnter.merge(legend)
-      .attr('transform', `translate(${width - margin.right - 140}, ${margin.top})`);
-    const items = legendG.selectAll('g.item').data(series, d => d.year);
-    const itemEnter = items.enter().append('g').attr('class', 'item');
-    itemEnter.append('rect').attr('width', 10).attr('height', 10);
-    itemEnter.append('text').attr('x', 16).attr('y', 9).style('font-size','12px');
-    const mergedItems = itemEnter.merge(items);
-    mergedItems.attr('transform', (d,i) => `translate(0, ${i*16})`);
-    mergedItems.select('rect').attr('fill', d => d.color);
-    mergedItems.select('text').text(d => d.year);
-    items.exit().remove();
+      // Remove line/point artifacts when switching from other tabs
+      plot.selectAll('.series,.pt,.pt-label').remove();
+    }
+
+  // Year legend (right side) — order: Now, Last year
+  const legend = svg.selectAll('.year-legend').data([series]);
+  const legendG = legend.enter().append('g').attr('class', 'year-legend').merge(legend);
+  const itemHeight = 18;
+  const legendHeight = itemHeight * series.length;
+  const legendX = margin.left + innerW + 20; // right of plot
+  const legendY = margin.top + (innerH - legendHeight) / 2; // vertically centered
+  legendG.attr('transform', `translate(${legendX}, ${legendY})`);
+
+  // Ensure content group for measuring bbox without including the frame
+  const contentSel = legendG.selectAll('g.legend-content').data([null]);
+  const contentEnter = contentSel.enter().append('g').attr('class','legend-content');
+  const contentG = contentEnter.merge(contentSel);
+
+  const items = contentG.selectAll('g.item').data(series, d => d.year);
+  const itemEnter = items.enter().append('g').attr('class', 'item');
+  itemEnter.append('rect').attr('width', 12).attr('height', 12).attr('y', 3).attr('rx', 2).attr('ry', 2);
+  itemEnter.append('text').attr('x', 18).attr('y', 12).style('font-size','12px');
+  const mergedItems = itemEnter.merge(items);
+  mergedItems.attr('transform', (d,i) => `translate(0, ${i * itemHeight})`);
+  mergedItems.select('rect').attr('fill', d => d.color);
+  // label using dynamic latest year for clarity across CIT and other series
+  mergedItems.select('text').text(d => (d.year === legendLatestYear ? 'This year' : 'Last year'));
+  items.exit().remove();
+
+  // Legend frame box sized to content
+  const padBox = 8;
+  const bb = contentG.node().getBBox();
+  let frame = legendG.select('rect.legend-frame');
+  if (frame.empty()) {
+    frame = legendG.insert('rect', ':first-child').attr('class','legend-frame');
+  }
+  frame
+    .attr('x', bb.x - padBox)
+    .attr('y', bb.y - padBox)
+    .attr('width', Math.max(0, bb.width + padBox * 2))
+    .attr('height', Math.max(0, bb.height + padBox * 2))
+    .attr('rx', 6)
+    .attr('ry', 6)
+    .attr('fill', '#ffffff')
+    .attr('stroke', '#dddddd');
+  
+  // --- Summary table below the chart ---
+  // For the active index (tab), compute:
+  // - now: the most recent available value across all quarters and years
+  // - most recent: the previous available value before 'now'
+  const chronological = [];
+  for (const y of years) {
+    for (const q of quarters) chronological.push({ y, q });
+  }
+  chronological.sort((a,b)=> a.y - b.y || quarters.indexOf(a.q) - quarters.indexOf(b.q));
+
+  const k = activeKey;
+  const vals = [];
+  for (const step of chronological) {
+    const v = byYQK.get(`${step.y}-${step.q}-${k}`);
+    if (v != null) vals.push({ y: step.y, q: step.q, v });
+  }
+  const nowEntry = vals[vals.length - 1] || null;
+  const prevEntry = vals.length > 1 ? vals[vals.length - 2] : null;
+  // Compute delta (Now - Last quarter)
+  const delta = (nowEntry && prevEntry) ? (nowEntry.v - prevEntry.v) : null;
+  const summary = [{
+    lastQuarter: prevEntry ? { value: prevEntry.v } : null,
+    now: nowEntry ? { value: nowEntry.v } : null,
+    delta,
+    diagnose: 'yellow'
+  }];
+
+  const summarySel = d3.select('#summary');
+  let table = summarySel.select('table');
+  if (table.empty()) {
+    table = summarySel.append('table');
+  const thead = table.append('thead').append('tr');
+  ['Last quarter', 'This quarter', 'Difference', 'Diagnose'].forEach((h,i) => {
+      const th = thead.append('th').text(h);
+      if (h !== 'Diagnose') th.attr('class','num');
+    });
+    table.append('tbody');
+  } else {
+    // ensure header matches (in case of earlier version)
+    const headerCells = table.select('thead').selectAll('th');
+    if (headerCells.size() !== 4) {
+      table.select('thead').remove();
+  const thead = table.insert('thead', 'tbody').append('tr');
+  ['Last quarter', 'This quarter', 'Difference', 'Diagnose'].forEach((h,i) => {
+        const th = thead.append('th').text(h);
+        if (h !== 'Diagnose') th.attr('class','num');
+      });
+    }
+  }
+  const tbody = table.select('tbody');
+  const rowsSel = tbody.selectAll('tr').data(summary);
+  const rowsEnter = rowsSel.enter().append('tr');
+  // Last quarter
+  rowsEnter.append('td').attr('class','num last-quarter');
+  // Now
+  rowsEnter.append('td').attr('class','num now');
+  // Delta
+  rowsEnter.append('td').attr('class','num delta');
+  // Diagnose
+  rowsEnter.append('td').attr('class','diag').html('<span class="diag-dot diag-yellow"></span>');
+  const merged = rowsEnter.merge(rowsSel);
+  merged.select('td.last-quarter').text(d => d.lastQuarter ? `${fmt(d.lastQuarter.value)}` : '—');
+  merged.select('td.now').text(d => d.now ? `${fmt(d.now.value)}` : '—');
+  merged.select('td.delta').html(d => {
+    if (d.delta == null) return '—';
+    const up = d.delta > 0;
+    const down = d.delta < 0;
+    const arrow = up ? '▲' : (down ? '▼' : '');
+    const cls = up ? 'arrow-up' : (down ? 'arrow-down' : '');
+    // Show absolute value (no parentheses), arrow indicates sign; keep aligned on one line
+    return `<span class=\"delta-wrap\"><span class=\"value\">${fmt(Math.abs(d.delta))}</span>${arrow ? ` <span class=\"arrow ${cls}\">${arrow}</span>` : ''}</span>`;
+  });
+  rowsSel.exit().remove();
+
+  // Ensure table width aligns with chart's inner plot width
+  layoutSummary(table);
+
+  // --- Notes section below the table ---
+  let notes = summarySel.select('.notes');
+  if (notes.empty()) {
+    notes = summarySel.append('div').attr('class', 'notes');
+  }
+  // Title (single)
+  const titleSel = notes.select('.notes-title');
+  (titleSel.empty() ? notes.append('div').attr('class','notes-title') : titleSel)
+    .text('Common Causes and Recommendations');
+  // Remove any previous grouped layout and ensure a single list of 6 items
+  notes.selectAll('.notes-groups,.notes-group').remove();
+  const noteItems = [
+    'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Quisque sagittis, velit at euismod efficitur, velit justo porta lectus, a pharetra dui nisl non urna.',
+    'Integer posuere erat a ante venenatis dapibus posuere velit aliquet. Donec sed odio dui. Cras mattis consectetur purus sit amet fermentum, et tempus felis interdum.',
+    'Curabitur blandit tempus porttitor. Fusce dapibus, tellus ac cursus commodo, tortor mauris condimentum nibh, ut fermentum massa justo sit amet risus. Vestibulum id ligula porta felis euismod semper.',
+    'Etiam porta sem malesuada magna mollis euismod. Nulla vitae elit libero, a pharetra augue. Morbi leo risus, porta ac consectetur ac, vestibulum at eros.',
+    'Nullam id dolor id nibh ultricies vehicula ut id elit. Donec ullamcorper nulla non metus auctor fringilla. Praesent commodo cursus magna, vel scelerisque nisl consectetur et.',
+    'Maecenas faucibus mollis interdum. Donec ullamcorper nulla non metus auctor fringilla. Sed posuere consectetur est at lobortis, sed posuere mi tristique.'
+  ];
+  const ul = (notes.select('ul').empty() ? notes.append('ul') : notes.select('ul'));
+  const li = ul.selectAll('li').data(noteItems);
+  li.enter().append('li').merge(li).text(d => d);
+  li.exit().remove();
+  // Align notes width with chart's inner plot width
+  layoutSummary(notes);
   }
 
   draw();
+
+  // Re-layout summary on resize
+  window.addEventListener('resize', () => {
+    const tbl = d3.select('#summary').select('table');
+  layoutSummary(tbl);
+  const nts = d3.select('#summary').select('.notes');
+  layoutSummary(nts);
+  });
 })();
