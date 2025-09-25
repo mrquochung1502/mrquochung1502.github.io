@@ -21,7 +21,7 @@
   const BAR_FRACTION = 0.85; // fraction of category spacing
 
   // Brand colors for year lines
-  const BRAND = { now: '#c32817ff', last: '#ffe2deff' };
+  const BRAND = { now: '#c32817ff', last: '#ffd9d3ff' };
 
   const container = d3.select('#chart');
   const svg = container
