@@ -1,5 +1,23 @@
 // Wrap everything so we can load data first
 (async function main(){
+  // Centralized version (update once here)
+  const APP_VERSION = '1.0.14';
+  // Expose globally if needed elsewhere
+  window.APP_VERSION = APP_VERSION;
+  // Inject or update version text element
+  (function(){
+    const v = APP_VERSION;
+    const id = 'app-version-badge';
+    let el = document.getElementById(id);
+    if(!el){
+      el = document.createElement('div');
+      el.id = id;
+      document.body.appendChild(el);
+    }
+    el.textContent = `Version: ${v}`;
+    el.setAttribute('data-version', v);
+    document.querySelectorAll('[data-bind-version]').forEach(n => n.textContent = v);
+  })();
   // Basic config
   const margin = { top: 20, right: 160, bottom: 40, left: 80 };
   const width = 960; // responsive via viewBox
@@ -196,36 +214,40 @@
       }));
       legendLatestYear = Math.max(...years);
     } else {
-      // CIT: annual axis, up to last 4 available years (now and previous 3)
-      const axisYears = computeCITYears(jsonRows); // last up to 4 years
-      const latestYear = axisYears.length ? axisYears[axisYears.length - 1] : null;
+      // CIT: always show current year and previous 3 years (total 4). Use 0 if no data.
+      const currentYear = Math.max(...years);
+      const axisYears = [currentYear - 3, currentYear - 2, currentYear - 1, currentYear];
+      const latestYear = currentYear;
       legendLatestYear = latestYear;
 
       citBarsData = axisYears.map(y => {
         const picked = pickCITForYear(byYQK, y);
-        if (!picked) return null;
+        if (picked) {
+          return {
+            x: String(y),
+            year: y,
+            value: picked.value,
+            quarter: picked.quarter,
+            provisional: picked.provisional,
+            color: (y === latestYear ? BRAND.now : BRAND.last)
+          };
+        }
+        // No data: show zero, mark as provisional with Q4 (treated final but zero)
         return {
           x: String(y),
-          year: y,
-          value: picked.value,
-          quarter: picked.quarter,
-          provisional: picked.provisional,
-          color: (y === latestYear ? BRAND.now : BRAND.last)
+            year: y,
+            value: 0,
+            quarter: 'Q4',
+            provisional: false,
+            color: (y === latestYear ? BRAND.now : BRAND.last)
         };
-      }).filter(Boolean);
+      });
 
-      // x-domain uses only years we have data for
       x.domain(citBarsData.map(d => d.x));
 
-      // Legend: always include 'This year'; include 'Last year/recent years' only if there is at least one prior year
-      if (latestYear != null) {
-        series = [{ year: latestYear, key, color: BRAND.now, data: [] }];
-        if ((citBarsData || []).some(d => d.year !== latestYear)) {
-          series.push({ year: latestYear - 1, key, color: BRAND.last, data: [] });
-        }
-      } else {
-        series = [];
-      }
+      // Legend: always include this year and at least one prior year reference
+      series = [{ year: latestYear, key, color: BRAND.now, data: [] }];
+      series.push({ year: latestYear - 1, key, color: BRAND.last, data: [] });
     }
 
     // Update Y for the active key across all years
@@ -578,17 +600,46 @@
   // Compute diagnose color per tab independently (based on its own latest vs previous values)
   tabs.selectAll('.tab').each(function(d){
     const key = d.key;
-    const chronological = [];
-    for (const y of years) for (const q of quarters) chronological.push({ y, q });
-    chronological.sort((a,b)=> a.y - b.y || quarters.indexOf(a.q) - quarters.indexOf(b.q));
-    const vals = [];
-    for (const step of chronological){
-      const v = byYQK.get(`${step.y}-${step.q}-${key}`);
-      if (v != null) vals.push({ y: step.y, q: step.q, v });
-    }
     let color = 'yellow';
-    if (vals.length >= 2){
-      color = computeDiagnosis(vals[vals.length-2].v, vals[vals.length-1].v);
+    if (key === 'CIT') {
+      // Use proportional annual comparison consistent with summary logic
+      function qIndex(q){ return ['Q1','Q2','Q3','Q4'].indexOf(q) + 1; }
+      const currentYear = Math.max(...years);
+      const previousYear = currentYear - 1;
+      // Latest quarters
+      let currentQuarter=null,currentValue=null;
+      for (const q of ['Q4','Q3','Q2','Q1']) { const v = byYQK.get(`${currentYear}-${q}-CIT`); if (v!=null){ currentQuarter=q; currentValue=v; break; } }
+      let prevQuarter=null,prevValue=null;
+      for (const q of ['Q4','Q3','Q2','Q1']) { const v = byYQK.get(`${previousYear}-${q}-CIT`); if (v!=null){ prevQuarter=q; prevValue=v; break; } }
+      if (currentValue != null && prevValue != null){
+        const curIdx = qIndex(currentQuarter); const prevIdx = qIndex(prevQuarter);
+        const currentProvisional = currentQuarter !== 'Q4';
+        const prevProvisional = prevQuarter !== 'Q4';
+        let adjCurrent = currentValue; let adjPrev = prevValue;
+        if (currentProvisional && !prevProvisional){
+          adjPrev = prevValue * (curIdx / 4);
+        } else if (!currentProvisional && prevProvisional){
+          adjCurrent = currentValue * (prevIdx / 4);
+        } else if (currentProvisional && prevProvisional){
+          const f = Math.min(curIdx, prevIdx);
+            if (curIdx !== f) adjCurrent = currentValue * (f / curIdx);
+            if (prevIdx !== f) adjPrev = prevValue * (f / prevIdx);
+        }
+        color = computeDiagnosis(adjPrev, adjCurrent);
+      }
+    } else {
+      // Original logic for PIT/VAT (latest two raw quarterly values)
+      const chronological = [];
+      for (const y of years) for (const q of quarters) chronological.push({ y, q });
+      chronological.sort((a,b)=> a.y - b.y || quarters.indexOf(a.q) - quarters.indexOf(b.q));
+      const vals = [];
+      for (const step of chronological){
+        const v = byYQK.get(`${step.y}-${step.q}-${key}`);
+        if (v != null) vals.push({ y: step.y, q: step.q, v });
+      }
+      if (vals.length >= 2){
+        color = computeDiagnosis(vals[vals.length-2].v, vals[vals.length-1].v);
+      }
     }
     d3.select(this)
       .classed('diag-yellow', color === 'yellow')
