@@ -45,6 +45,7 @@
 
   const meta = dataJson?.meta || {};
   const seriesKeys = meta.series || ['PIT', 'VAT', 'CIT'];
+  const TAB_ORDER = ['VAT','PIT','CIT'];
 
   // Flatten JSON as quarterly points per series
   const jsonRows = (dataJson?.data || []).flatMap(d => (
@@ -52,9 +53,10 @@
   )).filter(r => r.value != null);
 
   // Formatter: negatives in parentheses, thousands with commas; optional currency suffix for tooltips
+  // Formatter: Vietnamese style thousands (dot) and parentheses for negatives
   const fmt = (n, currencySuffix = '') => {
     if (n == null || Number.isNaN(n)) return '';
-    const base = Math.abs(n).toLocaleString('en-US');
+    const base = Math.abs(n).toLocaleString('vi-VN');
     const suf = currencySuffix ? ` ${currencySuffix}` : '';
     return n < 0 ? `(${base}${suf})` : `${base}${suf}`;
   };
@@ -148,11 +150,18 @@
     const dx = positions.length >= 2 ? (positions[1] - positions[0]) : innerPlotW * 0.25;
     return Math.max(BAR_MIN, Math.min(BAR_MAX, dx * BAR_FRACTION));
   }
+  function computeDiagnosis(prev, curr){
+    if (prev == null || curr == null || prev === 0) return 'yellow';
+    const changePct = Math.abs((curr - prev) / prev) * 100; // percentage magnitude
+    if (changePct < 10) return 'green';
+    if (changePct < 20) return 'yellow';
+    return 'red';
+  }
 
   // Tabs to switch single series view
   const tabs = d3.select('#tabs');
   const keyHasData = Object.fromEntries(seriesKeys.map(k => [k, rows.some(r => r[k] != null)]));
-  const tabsData = seriesKeys.map(k => ({ key: k, enabled: keyHasData[k] }));
+  const tabsData = TAB_ORDER.filter(k => seriesKeys.includes(k)).map(k => ({ key: k, enabled: keyHasData[k] }));
   let activeKey = (tabsData.find(d => d.enabled) || tabsData[0]).key;
   const tabSel = tabs.selectAll('.tab')
     .data(tabsData)
@@ -388,7 +397,7 @@
       }
       return countYears > 2 ? 'Last recent years' : 'Last year';
     }
-    return d.year === legendLatestYear ? 'This year' : 'Last year';
+    return d.year === legendLatestYear ? `This year (${d.year})` : `Last year (${d.year})`;
   });
   items.exit().remove();
 
@@ -425,25 +434,91 @@
     const v = byYQK.get(`${step.y}-${step.q}-${k}`);
     if (v != null) vals.push({ y: step.y, q: step.q, v });
   }
-  const nowEntry = vals[vals.length - 1] || null;
-  const prevEntry = vals.length > 1 ? vals[vals.length - 2] : null;
-  // Compute delta (Now - Last quarter)
-  const delta = (nowEntry && prevEntry) ? (nowEntry.v - prevEntry.v) : null;
-  const summary = [{
-    lastQuarter: prevEntry ? { value: prevEntry.v } : null,
-    now: nowEntry ? { value: nowEntry.v } : null,
-    delta,
-    diagnose: 'yellow'
-  }];
+  let summary;
+  // For CIT header annotation when current year is provisional
+  let citHeaderQuarter = null;
+  if (activeKey === 'CIT') {
+    // Special CIT proportional comparison logic
+    function qIndex(q){ return ['Q1','Q2','Q3','Q4'].indexOf(q) + 1; }
+    const currentYear = Math.max(...years);
+    const previousYear = currentYear - 1;
+    // Find latest quarter for current year
+    let currentQuarter = null, currentValue = null;
+    for (const q of ['Q4','Q3','Q2','Q1']) {
+      const v = byYQK.get(`${currentYear}-${q}-CIT`);
+      if (v != null){ currentQuarter = q; currentValue = v; break; }
+    }
+    // Find latest quarter for previous year
+    let prevQuarter = null, prevValue = null;
+    for (const q of ['Q4','Q3','Q2','Q1']) {
+      const v = byYQK.get(`${previousYear}-${q}-CIT`);
+      if (v != null){ prevQuarter = q; prevValue = v; break; }
+    }
+    // If current year is provisional (not Q4) store quarter for header label
+    if (currentValue != null && currentQuarter && currentQuarter !== 'Q4') {
+      citHeaderQuarter = currentQuarter;
+    }
+    if (currentValue == null) {
+      summary = [{ lastQuarter: prevValue? { value: prevValue }: null, now: null, delta: null, diagnose: 'yellow' }];
+    } else if (prevValue == null) {
+      summary = [{ lastQuarter: null, now: { value: currentValue }, delta: null, diagnose: 'yellow' }];
+    } else {
+      const curIdx = qIndex(currentQuarter);
+      const prevIdx = qIndex(prevQuarter);
+      const currentProvisional = currentQuarter !== 'Q4';
+      const prevProvisional = prevQuarter !== 'Q4';
+      let adjCurrent = currentValue;
+      let adjPrev = prevValue;
+      if (currentProvisional && !prevProvisional) {
+        // Scale previous full year to same progress fraction
+        adjPrev = prevValue * (curIdx / 4);
+      } else if (!currentProvisional && prevProvisional) {
+        // Scale current full year down to match previous provisional progress
+        adjCurrent = currentValue * (prevIdx / 4);
+      } else if (currentProvisional && prevProvisional) {
+        // Harmonize to the lesser progress fraction for fair comparison
+        const f = Math.min(curIdx, prevIdx);
+        if (curIdx !== f) adjCurrent = currentValue * (f / curIdx);
+        if (prevIdx !== f) adjPrev = prevValue * (f / prevIdx);
+      }
+      // Both final -> no scaling
+      const delta = adjCurrent - adjPrev;
+      const diagnoseColor = computeDiagnosis(adjPrev, adjCurrent);
+      summary = [{
+        lastQuarter: { value: adjPrev },
+        now: { value: adjCurrent },
+        delta,
+        diagnose: diagnoseColor
+      }];
+    }
+  } else {
+    const nowEntry = vals[vals.length - 1] || null;
+    const prevEntry = vals.length > 1 ? vals[vals.length - 2] : null;
+    const delta = (nowEntry && prevEntry) ? (nowEntry.v - prevEntry.v) : null;
+    let diagnoseColor = computeDiagnosis(prevEntry?.v, nowEntry?.v);
+    summary = [{
+      lastQuarter: prevEntry ? { value: prevEntry.v } : null,
+      now: nowEntry ? { value: nowEntry.v } : null,
+      delta,
+      diagnose: diagnoseColor
+    }];
+  }
 
   const summarySel = d3.select('#summary');
   let table = summarySel.select('table');
   if (table.empty()) {
     table = summarySel.append('table');
   const thead = table.append('thead').append('tr');
-  const headers = (activeKey === 'CIT')
-    ? ['Last year', 'This year', '', 'Diagnose']
-    : ['Last quarter', 'This quarter', '', 'Diagnose'];
+  let headers;
+  if (activeKey === 'CIT') {
+    headers = ['Last year', 'This year', '', 'Diagnose'];
+    if (citHeaderQuarter) {
+      headers[0] += ` (${citHeaderQuarter})`;
+      headers[1] += ` (${citHeaderQuarter})`;
+    }
+  } else {
+    headers = ['Last quarter', 'This quarter', '', 'Diagnose'];
+  }
   headers.forEach((h,i) => {
       const th = thead.append('th').text(h);
       if (h !== 'Diagnose') th.attr('class','num');
@@ -453,9 +528,16 @@
     // Always rebuild header to reflect active series semantics (CIT uses years)
     table.select('thead').remove();
     const thead = table.insert('thead', 'tbody').append('tr');
-    const headers = (activeKey === 'CIT')
-      ? ['Last year', 'This year', '', 'Diagnose']
-      : ['Last quarter', 'This quarter', '', 'Diagnose'];
+    let headers;
+    if (activeKey === 'CIT') {
+      headers = ['Last year', 'This year', '', 'Diagnose'];
+      if (citHeaderQuarter) {
+        headers[0] += ` (${citHeaderQuarter})`;
+        headers[1] += ` (${citHeaderQuarter})`;
+      }
+    } else {
+      headers = ['Last quarter', 'This quarter', '', 'Diagnose'];
+    }
     headers.forEach((h,i) => {
       const th = thead.append('th').text(h);
       if (h !== 'Diagnose') th.attr('class','num');
@@ -471,7 +553,7 @@
   // Delta
   rowsEnter.append('td').attr('class','num delta');
   // Diagnose
-  rowsEnter.append('td').attr('class','diag').html('<span class="diag-dot diag-yellow"></span>');
+  rowsEnter.append('td').attr('class','diag');
   const merged = rowsEnter.merge(rowsSel);
   merged.select('td.last-quarter').text(d => d.lastQuarter ? `${fmt(d.lastQuarter.value)}` : '—');
   merged.select('td.now').text(d => d.now ? `${fmt(d.now.value)}` : '—');
@@ -479,12 +561,40 @@
     if (d.delta == null) return '—';
     const up = d.delta > 0;
     const down = d.delta < 0;
+    // Revert to filled triangle glyphs ▲ / ▼ for clearer visual
     const arrow = up ? '▲' : (down ? '▼' : '');
     const cls = up ? 'arrow-up' : (down ? 'arrow-down' : '');
-    // Show absolute value (no parentheses), arrow indicates sign; keep aligned on one line
-    return `<span class=\"delta-wrap\"><span class=\"value\">${fmt(Math.abs(d.delta))}</span>${arrow ? ` <span class=\"arrow ${cls}\">${arrow}</span>` : ''}</span>`;
+    const prevVal = d.lastQuarter ? d.lastQuarter.value : null;
+    let pctHtml = '';
+    if (prevVal && prevVal !== 0) {
+      const pct = Math.round(Math.abs(d.delta / prevVal * 100));
+      pctHtml = ` (<span class="pct">${pct}%</span>)`;
+    }
+    return `<span class="delta-wrap"><span class="value">${fmt(Math.abs(d.delta))}</span>${pctHtml}${arrow ? ` <span class="arrow ${cls} diag-${d.diagnose}">${arrow}</span>` : ''}</span>`;
   });
+  merged.select('td.diag').html(d => `<span class="diag-dot diag-${d.diagnose}"></span>`);
   rowsSel.exit().remove();
+
+  // Compute diagnose color per tab independently (based on its own latest vs previous values)
+  tabs.selectAll('.tab').each(function(d){
+    const key = d.key;
+    const chronological = [];
+    for (const y of years) for (const q of quarters) chronological.push({ y, q });
+    chronological.sort((a,b)=> a.y - b.y || quarters.indexOf(a.q) - quarters.indexOf(b.q));
+    const vals = [];
+    for (const step of chronological){
+      const v = byYQK.get(`${step.y}-${step.q}-${key}`);
+      if (v != null) vals.push({ y: step.y, q: step.q, v });
+    }
+    let color = 'yellow';
+    if (vals.length >= 2){
+      color = computeDiagnosis(vals[vals.length-2].v, vals[vals.length-1].v);
+    }
+    d3.select(this)
+      .classed('diag-yellow', color === 'yellow')
+      .classed('diag-red', color === 'red')
+      .classed('diag-green', color === 'green');
+  });
 
   // Ensure table width aligns with chart's inner plot width
   layoutSummary(table);
@@ -497,7 +607,7 @@
   // Title (single)
   const titleSel = notes.select('.notes-title');
   (titleSel.empty() ? notes.append('div').attr('class','notes-title') : titleSel)
-    .text('Common Causes and Recommendations');
+    .html('<strong>Common Causes and Recommendations</strong>');
   // Remove any previous grouped layout and ensure a single list of 6 items
   notes.selectAll('.notes-groups,.notes-group').remove();
   const noteItems = [

@@ -1,7 +1,10 @@
 /* Base reset */
 *{box-sizing:border-box}
-:root{--font-main:'EB Garamond', Garamond, 'Times New Roman', serif;--page-pad:20px}
+:root{--font-main:'EB Garamond', serif;--page-pad:20px}
 html,body{font-family:var(--font-main);margin:0;color:#222;background:#fafafa}
+body{padding-top:150px}
+/* Ensure EB Garamond everywhere */
+body, body * { font-family: var(--font-main) !important; }
 /* Typography inheritance */
 button,input,select,textarea,.tab,.tooltip{font-family:var(--font-main)}
 /* SVG text font */
@@ -9,10 +12,36 @@ svg text{font-family:var(--font-main)}
 header{padding:16px var(--page-pad);background:#fff;border-bottom:1px solid #eee}
 header h1{margin:0;font-size:20px}
 .subtitle{margin:6px 0 0;color:#666}
+/* Brand bar (replaces header) */
+ .brand-bar{--brand-h:72px;position:fixed;top:0;left:0;right:0;z-index:1000;padding:14px 0 4px 0;text-align:center;background:#fafafa;border-bottom:1px solid #cfcfcf}
+ .brand-inner{display:flex;flex-direction:column;align-items:center;gap:10px}
+ .brand-logo{height:44px;width:auto;display:block}
+/* fallback colored blocks (unused when logo image loads) */
+.logo-blocks{display:none}
+.logo-blocks .blk{display:inline-block;width:48px;height:48px}
+.logo-blocks .blk-dark{background:#2f2f2f}
+.logo-blocks .blk-accent{background:#a83532}
+ .brand-text .main-title{font-size:32px;font-weight:400;letter-spacing:.4px}
+ .section-heading{font-size:32px;text-align:center;font-weight:400;letter-spacing:.4px;margin:12px 0 14px}
+ .payslip-heading{margin-top:0;margin-bottom:18px}
+@media (max-width: 680px){
+	.brand-logo{height:38px}
+	.brand-text .main-title{font-size:26px}
+	.section-heading{font-size:26px}
+}
+@media (max-width:480px){
+	.brand-bar{padding:16px 0 2px 0}
+	.brand-logo{height:34px}
+	.brand-text .main-title{font-size:23px}
+	.section-heading{font-size:23px;margin-bottom:12px}
+}
 .controls{padding:8px var(--page-pad)}
-#tabs{display:flex;gap:8px;margin-bottom:8px}
-.tab{padding:6px 10px;border:1px solid #ddd;border-bottom:none;border-radius:6px 6px 0 0;background:#f2f2f2;cursor:pointer}
-.tab.active{background:#fff;border-color:#ccc;font-weight:600}
+#tabs{display:flex;gap:12px;margin-bottom:8px;justify-content:center}
+.tab{padding:6px 34px;border:1px solid #ddd;border-bottom:none;border-radius:8px 8px 0 0;background:#f2f2f2;cursor:pointer;transition:background .2s}
+.tab.active{border-color:#666;font-weight:600}
+.tab.diag-yellow{background:#fff9e0}
+.tab.diag-red{background:#fde8e6}
+.tab.diag-green{background:#e8f6ec}
 .tab.disabled{opacity:.5;cursor:not-allowed}
 /* Chart container */
 #chart{height:520px;padding:0 var(--page-pad)}
@@ -40,10 +69,15 @@ svg{width:100%;height:100%}
 .summary .num{text-align:center;white-space:nowrap;font-variant-numeric:tabular-nums}
 .summary td.delta{text-align:center}
 .delta-wrap{display:inline-flex;align-items:center;gap:6px}
-.arrow{font-size:1em;line-height:1;vertical-align:middle}
-.arrow-up{color:#c0392b}
-.arrow-down{color:#27ae60}
+/* Percentage inherits base font size */
+.delta-wrap .pct{font-size:inherit;}
+.arrow { font-size: 0.95em; line-height:1; vertical-align:middle; display:inline-block; background:transparent !important; }
+.arrow.diag-yellow { color:#f1c40f; background:transparent !important; }
+.arrow.diag-red { color:#e74c3c; background:transparent !important; }
+.arrow.diag-green { color:#27ae60; background:transparent !important; }
 .diag{display:inline-flex;align-items:center;gap:8px}
-.summary td.diag{display:table-cell !important;text-align:center}
+.summary td.diag{display:flex !important;align-items:center;justify-content:center;padding:8px 10px;line-height:1}
 .diag-dot{width:16px;height:16px;border-radius:50%;display:inline-block;vertical-align:middle}
 .diag-yellow{background:#f1c40f}
+.diag-red{background:#e74c3c}
+.diag-green{background:#27ae60}
