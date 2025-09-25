@@ -61,8 +61,20 @@
   const BAR_MAX = 160;
   const BAR_FRACTION = 0.85; // fraction of category spacing
 
-  // Brand colors for year lines
-  const BRAND = { now: '#c32817ff', last: '#ffe2deff' };
+  // Dynamic palette: light/dark variants per diagnosis state
+  function getCssVar(name){
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+  function getPalette(){
+    return {
+      yellow:{ dark: getCssVar('--tab-yellow-dark'), light: getCssVar('--tab-yellow-light')},
+      red:{ dark: getCssVar('--tab-red-dark'), light: getCssVar('--tab-red-light')},
+      green:{ dark: getCssVar('--tab-green-dark'), light: getCssVar('--tab-green-light')},
+      neutral:{ dark: getCssVar('--tab-neutral-dark'), light: getCssVar('--tab-neutral-light')}
+    };
+  }
+  // Fallback brand in case diagnosis not yet computed
+  const BRAND = { now: '#444444', last: '#e3e3e3' };
 
   const container = d3.select('#chart');
   const svg = container
@@ -221,7 +233,44 @@
     const key = activeKey;
     const isCIT = key === 'CIT';
     // Build one line per year.
-    const yearColor = y => (y === 2025 ? BRAND.now : BRAND.last);
+    // Determine diagnosis color for active key (reuse logic from tab coloring)
+    function currentDiagnoseColor(){
+      const key = activeKey;
+      if (key === 'CIT') {
+        function qIndex(q){ return ['Q1','Q2','Q3','Q4'].indexOf(q) + 1; }
+        const currentYear = Math.max(...years);
+        const previousYear = currentYear - 1;
+        let currentQuarter=null,currentValue=null;
+        for (const q of ['Q4','Q3','Q2','Q1']) { const v = byYQK.get(`${currentYear}-${q}-${key}`); if (v!=null){ currentQuarter=q; currentValue=v; break; } }
+        let prevQuarter=null,prevValue=null;
+        for (const q of ['Q4','Q3','Q2','Q1']) { const v = byYQK.get(`${previousYear}-${q}-${key}`); if (v!=null){ prevQuarter=q; prevValue=v; break; } }
+        if (currentValue!=null && prevValue!=null){
+          const curIdx=qIndex(currentQuarter), prevIdx=qIndex(prevQuarter);
+          const currentProvisional=currentQuarter!=='Q4';
+          const prevProvisional=prevQuarter!=='Q4';
+          let adjCurrent=currentValue, adjPrev=prevValue;
+          if (currentProvisional && !prevProvisional) adjPrev = prevValue * (curIdx/4);
+          else if (!currentProvisional && prevProvisional) adjCurrent = currentValue * (prevIdx/4);
+          else if (currentProvisional && prevProvisional){
+            const f=Math.min(curIdx, prevIdx);
+            if (curIdx!==f) adjCurrent = currentValue * (f/curIdx);
+            if (prevIdx!==f) adjPrev = prevValue * (f/prevIdx);
+          }
+          return computeDiagnosis(adjPrev, adjCurrent);
+        }
+        return 'yellow';
+      } else {
+        const chronological=[]; for (const y of years) for (const q of quarters) chronological.push({ y, q });
+        chronological.sort((a,b)=> a.y - b.y || quarters.indexOf(a.q)-quarters.indexOf(b.q));
+        const vals=[]; for (const step of chronological){ const v = byYQK.get(`${step.y}-${step.q}-${key}`); if (v!=null) vals.push({ y:step.y, q:step.q, v }); }
+        if (vals.length>=2) return computeDiagnosis(vals[vals.length-2].v, vals[vals.length-1].v);
+        return 'yellow';
+      }
+    }
+    const diagKey = currentDiagnoseColor();
+  const PAL = getPalette();
+  const palette = PAL[diagKey] || PAL.neutral;
+    const yearColor = y => (y === 2025 ? palette.dark : palette.light);
 
     let series; // used for legend items
     let citBarsData = null; // used only for CIT rendering & scales
@@ -243,7 +292,7 @@
       const latestYear = currentYear;
       legendLatestYear = latestYear;
 
-      citBarsData = axisYears.map(y => {
+  citBarsData = axisYears.map(y => {
         const picked = pickCITForYear(byYQK, y);
         if (picked) {
           return {
@@ -252,7 +301,7 @@
             value: picked.value,
             quarter: picked.quarter,
             provisional: picked.provisional,
-            color: (y === latestYear ? BRAND.now : BRAND.last)
+    color: (y === latestYear ? palette.dark : palette.light)
           };
         }
         // No data: show zero, mark as provisional with Q4 (treated final but zero)
@@ -262,15 +311,15 @@
             value: 0,
             quarter: 'Q4',
             provisional: false,
-            color: (y === latestYear ? BRAND.now : BRAND.last)
+    color: (y === latestYear ? palette.dark : palette.light)
         };
       });
 
       x.domain(citBarsData.map(d => d.x));
 
       // Legend: always include this year and at least one prior year reference
-      series = [{ year: latestYear, key, color: BRAND.now, data: [] }];
-      series.push({ year: latestYear - 1, key, color: BRAND.last, data: [] });
+  series = [{ year: latestYear, key, color: palette.dark, data: [] }];
+  series.push({ year: latestYear - 1, key, color: palette.light, data: [] });
     }
 
     // Update Y for the active key across all years

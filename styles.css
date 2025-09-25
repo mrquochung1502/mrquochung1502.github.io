@@ -1,6 +1,6 @@
 /* Base reset */
 *{box-sizing:border-box}
-:root{--font-main:'EB Garamond', serif;--page-pad:20px}
+:root{--font-main:'EB Garamond', serif;--page-pad:20px;--tab-neutral-light:#e3e3e3;--tab-neutral-dark:#444444;--tab-yellow-light:#ffe199;--tab-yellow-dark:#efc007;--tab-red-light:#f4c2bd;--tab-red-dark:#b93228;--tab-green-light:#cfe7d7;--tab-green-dark:#348c5b}
 html,body{font-family:var(--font-main);margin:0;color:#222;background:#fafafa}
 body{padding-top:150px}
 /* Ensure EB Garamond everywhere */
@@ -37,16 +37,17 @@ header h1{margin:0;font-size:20px}
 }
 .controls{padding:8px var(--page-pad)}
 #tabs{display:flex;gap:12px;margin-bottom:8px;justify-content:center}
-.tab{padding:6px 34px;border:1px solid transparent;border-radius:8px 8px 0 0;background:#e3e3e3;cursor:pointer;transition:background .2s, filter .2s, border-color .2s}
-.tab.active{font-weight:600;background:#444;color:#fff}
+.tab{padding:6px 34px;border:1px solid transparent;border-radius:8px 8px 0 0;background:var(--tab-neutral-light);cursor:pointer;transition:background .2s, filter .2s, border-color .2s;font-weight:600}
+/* Active tab now only changes color/background (bold applied to all tabs) */
+.tab.active{background:var(--tab-neutral-dark);color:#fff}
 /* Diagnosis color states */
-.tab.diag-yellow{background:#ffe199}
-.tab.diag-red{background:#f4c2bd}
-.tab.diag-green{background:#cfe7d7}
+.tab.diag-yellow{background:var(--tab-yellow-light)}
+.tab.diag-red{background:var(--tab-red-light)}
+.tab.diag-green{background:var(--tab-green-light)}
 /* Darker when active + diagnosis */
-.tab.active.diag-yellow{background:#efc007;color:#fff}
-.tab.active.diag-red{background:#b93228;color:#fff}
-.tab.active.diag-green{background:#348c5b;color:#fff}
+.tab.active.diag-yellow{background:var(--tab-yellow-dark);color:#fff}
+.tab.active.diag-red{background:var(--tab-red-dark);color:#fff}
+.tab.active.diag-green{background:var(--tab-green-dark);color:#fff}
 .tab.disabled{opacity:.5;cursor:not-allowed}
 /* Chart container */
 #chart{height:520px;padding:0 var(--page-pad)}
@@ -77,15 +78,15 @@ svg{width:100%;height:100%}
 /* Percentage inherits base font size */
 .delta-wrap .pct{font-size:inherit;}
 .arrow { font-size: 0.95em; line-height:1; vertical-align:middle; display:inline-block; background:transparent !important; }
-.arrow.diag-yellow { color:#f1c40f; background:transparent !important; }
-.arrow.diag-red { color:#dc210c; background:transparent !important; }
-.arrow.diag-green { color:#27ae60; background:transparent !important; }
+.arrow.diag-yellow { color:var(--tab-yellow-dark); background:transparent !important; }
+.arrow.diag-red { color:var(--tab-red-dark); background:transparent !important; }
+.arrow.diag-green { color:var(--tab-green-dark); background:transparent !important; }
 .diag{display:inline-flex;align-items:center;gap:8px}
 .summary td.diag{display:flex !important;align-items:center;justify-content:center;padding:8px 10px;line-height:1}
 .diag-dot{width:16px;height:16px;border-radius:50%;display:inline-block;vertical-align:middle}
-.diag-yellow{background:#f1c40f}
-.diag-red{background:#dc210c}
-.diag-green{background:#27ae60}
+.diag-yellow{background:var(--tab-yellow-dark)}
+.diag-red{background:var(--tab-red-dark)}
+.diag-green{background:var(--tab-green-dark)}
 
 /* Version text (plain) */
 #app-version-badge{position:fixed;right:14px;bottom:10px;font-size:12px;color:#777;font-weight:400;letter-spacing:.3px;background:transparent;padding:0;box-shadow:none;border:none;z-index:1500;}
