@@ -18,6 +18,29 @@
     el.setAttribute('data-version', v);
     document.querySelectorAll('[data-bind-version]').forEach(n => n.textContent = v);
   })();
+  // Ensure dynamic structure (tabs, chart, summary, tooltip) exists; keep logo + titles untouched
+  (function ensureDom(){
+    // If chart already present we assume whole structure exists
+    const body = document.body;
+    if(!document.getElementById('chart')){
+      // controls wrapper with tabs
+      const controls = document.createElement('section');
+      controls.className = 'controls';
+      const tabsDiv = document.createElement('div');
+      tabsDiv.id = 'tabs';
+      tabsDiv.className = 'tabs';
+      controls.appendChild(tabsDiv);
+      body.appendChild(controls);
+      // main wrapper
+      const main = document.createElement('main');
+      const chartDiv = document.createElement('div'); chartDiv.id='chart'; main.appendChild(chartDiv);
+      const summarySec = document.createElement('section'); summarySec.id='summary'; summarySec.className='summary'; main.appendChild(summarySec);
+      body.appendChild(main);
+    }
+    if(!document.getElementById('tooltip')){
+      const tt = document.createElement('div'); tt.id='tooltip'; tt.className='tooltip'; tt.style.opacity='0'; document.body.appendChild(tt);
+    }
+  })();
   // Basic config
   const margin = { top: 20, right: 160, bottom: 40, left: 80 };
   const width = 960; // responsive via viewBox

@@ -37,11 +37,16 @@ header h1{margin:0;font-size:20px}
 }
 .controls{padding:8px var(--page-pad)}
 #tabs{display:flex;gap:12px;margin-bottom:8px;justify-content:center}
-.tab{padding:6px 34px;border:1px solid #ddd;border-bottom:none;border-radius:8px 8px 0 0;background:#f2f2f2;cursor:pointer;transition:background .2s}
-.tab.active{border-color:#666;font-weight:600}
-.tab.diag-yellow{background:#fff9e0}
-.tab.diag-red{background:#fde8e6}
-.tab.diag-green{background:#e8f6ec}
+.tab{padding:6px 34px;border:1px solid transparent;border-radius:8px 8px 0 0;background:#e3e3e3;cursor:pointer;transition:background .2s, filter .2s, border-color .2s}
+.tab.active{font-weight:600;background:#444;color:#fff}
+/* Diagnosis color states */
+.tab.diag-yellow{background:#ffe199}
+.tab.diag-red{background:#f4c2bd}
+.tab.diag-green{background:#cfe7d7}
+/* Darker when active + diagnosis */
+.tab.active.diag-yellow{background:#efc007;color:#fff}
+.tab.active.diag-red{background:#b93228;color:#fff}
+.tab.active.diag-green{background:#348c5b;color:#fff}
 .tab.disabled{opacity:.5;cursor:not-allowed}
 /* Chart container */
 #chart{height:520px;padding:0 var(--page-pad)}
@@ -73,13 +78,13 @@ svg{width:100%;height:100%}
 .delta-wrap .pct{font-size:inherit;}
 .arrow { font-size: 0.95em; line-height:1; vertical-align:middle; display:inline-block; background:transparent !important; }
 .arrow.diag-yellow { color:#f1c40f; background:transparent !important; }
-.arrow.diag-red { color:#e74c3c; background:transparent !important; }
+.arrow.diag-red { color:#dc210c; background:transparent !important; }
 .arrow.diag-green { color:#27ae60; background:transparent !important; }
 .diag{display:inline-flex;align-items:center;gap:8px}
 .summary td.diag{display:flex !important;align-items:center;justify-content:center;padding:8px 10px;line-height:1}
 .diag-dot{width:16px;height:16px;border-radius:50%;display:inline-block;vertical-align:middle}
 .diag-yellow{background:#f1c40f}
-.diag-red{background:#e74c3c}
+.diag-red{background:#dc210c}
 .diag-green{background:#27ae60}
 
 /* Version text (plain) */
