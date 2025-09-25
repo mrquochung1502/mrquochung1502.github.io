@@ -11,29 +11,29 @@
 		"aliases": {
 			"Corporation": "CIT"
 		},
-		"series": ["PIT", "VAT", "CIT"],
+		"series": ["VAT", "PIT", "CIT"],
 		"schema": {
 			"year": "number",
 			"quarter": "Q1|Q2|Q3|Q4",
-			"PIT": "number|null",
 			"VAT": "number|null",
+			"PIT": "number|null",
 			"CIT": "number|null"
 		}
 	},
 	"data": [
-		{ "year": 2022, "quarter": "Q4", "PIT": null, "VAT": null, "CIT": 23323445 },
+		{ "year": 2022, "quarter": "Q4", "VAT": null, "PIT": null, "CIT": 23323445 },
 
-		{ "year": 2023, "quarter": "Q4", "PIT": null, "VAT": null, "CIT": 50735328 },
+		{ "year": 2023, "quarter": "Q4", "VAT": null, "PIT": null, "CIT": 50735328 },
 
-		{ "year": 2024, "quarter": "Q1", "PIT": 7205125, "VAT": -50889013, "CIT": null },
-		{ "year": 2024, "quarter": "Q2", "PIT": 15445739, "VAT": -169924175, "CIT": null },
-		{ "year": 2024, "quarter": "Q3", "PIT": 12173687, "VAT": 514081801, "CIT": null },
-		{ "year": 2024, "quarter": "Q4", "PIT": 16483421, "VAT": -69904838, "CIT": 140735228 },
+		{ "year": 2024, "quarter": "Q1", "VAT": -50889013, "PIT": 7205125, "CIT": null },
+		{ "year": 2024, "quarter": "Q2", "VAT": -169924175, "PIT": 15445739, "CIT": null },
+		{ "year": 2024, "quarter": "Q3", "VAT": 514081801, "PIT": 12173687, "CIT": null },
+		{ "year": 2024, "quarter": "Q4", "VAT": -69904838, "PIT": 16483421, "CIT": 140735228 },
 
-		{ "year": 2025, "quarter": "Q1", "PIT": 143998639, "VAT": 404854007, "CIT": 105839089 },
-		{ "year": 2025, "quarter": "Q2", "PIT": 146305814, "VAT": 91577032, "CIT": 89090872 },
-		{ "year": 2025, "quarter": "Q3", "PIT": null, "VAT": null, "CIT": null },
-		{ "year": 2025, "quarter": "Q4", "PIT": null, "VAT": null, "CIT": null }
+		{ "year": 2025, "quarter": "Q1", "VAT": 404854007, "PIT": 143998639, "CIT": 105839089 },
+		{ "year": 2025, "quarter": "Q2", "VAT": 91577032, "PIT": 146305814, "CIT": 79090872 },
+		{ "year": 2025, "quarter": "Q3", "VAT": null, "PIT": null, "CIT": null },
+		{ "year": 2025, "quarter": "Q4", "VAT": null, "PIT": null, "CIT": null }
 	]
 }
 

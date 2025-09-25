@@ -1,5 +1,46 @@
 // Wrap everything so we can load data first
 (async function main(){
+  // Centralized version (update once here)
+  const APP_VERSION = '1.0.14';
+  // Expose globally if needed elsewhere
+  window.APP_VERSION = APP_VERSION;
+  // Inject or update version text element
+  (function(){
+    const v = APP_VERSION;
+    const id = 'app-version-badge';
+    let el = document.getElementById(id);
+    if(!el){
+      el = document.createElement('div');
+      el.id = id;
+      document.body.appendChild(el);
+    }
+    el.textContent = `Version: ${v}`;
+    el.setAttribute('data-version', v);
+    document.querySelectorAll('[data-bind-version]').forEach(n => n.textContent = v);
+  })();
+  // Ensure dynamic structure (tabs, chart, summary, tooltip) exists; keep logo + titles untouched
+  (function ensureDom(){
+    // If chart already present we assume whole structure exists
+    const body = document.body;
+    if(!document.getElementById('chart')){
+      // controls wrapper with tabs
+      const controls = document.createElement('section');
+      controls.className = 'controls';
+      const tabsDiv = document.createElement('div');
+      tabsDiv.id = 'tabs';
+      tabsDiv.className = 'tabs';
+      controls.appendChild(tabsDiv);
+      body.appendChild(controls);
+      // main wrapper
+      const main = document.createElement('main');
+      const chartDiv = document.createElement('div'); chartDiv.id='chart'; main.appendChild(chartDiv);
+      const summarySec = document.createElement('section'); summarySec.id='summary'; summarySec.className='summary'; main.appendChild(summarySec);
+      body.appendChild(main);
+    }
+    if(!document.getElementById('tooltip')){
+      const tt = document.createElement('div'); tt.id='tooltip'; tt.className='tooltip'; tt.style.opacity='0'; document.body.appendChild(tt);
+    }
+  })();
   // Basic config
   const margin = { top: 20, right: 160, bottom: 40, left: 80 };
   const width = 960; // responsive via viewBox
@@ -20,8 +61,20 @@
   const BAR_MAX = 160;
   const BAR_FRACTION = 0.85; // fraction of category spacing
 
-  // Brand colors for year lines
-  const BRAND = { now: '#c32817ff', last: '#ffd9d3ff' };
+  // Dynamic palette: light/dark variants per diagnosis state
+  function getCssVar(name){
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+  function getPalette(){
+    return {
+      yellow:{ dark: getCssVar('--tab-yellow-dark'), light: getCssVar('--tab-yellow-light')},
+      red:{ dark: getCssVar('--tab-red-dark'), light: getCssVar('--tab-red-light')},
+      green:{ dark: getCssVar('--tab-green-dark'), light: getCssVar('--tab-green-light')},
+      neutral:{ dark: getCssVar('--tab-neutral-dark'), light: getCssVar('--tab-neutral-light')}
+    };
+  }
+  // Fallback brand in case diagnosis not yet computed
+  const BRAND = { now: '#444444', last: '#e3e3e3' };
 
   const container = d3.select('#chart');
   const svg = container
@@ -180,7 +233,44 @@
     const key = activeKey;
     const isCIT = key === 'CIT';
     // Build one line per year.
-    const yearColor = y => (y === 2025 ? BRAND.now : BRAND.last);
+    // Determine diagnosis color for active key (reuse logic from tab coloring)
+    function currentDiagnoseColor(){
+      const key = activeKey;
+      if (key === 'CIT') {
+        function qIndex(q){ return ['Q1','Q2','Q3','Q4'].indexOf(q) + 1; }
+        const currentYear = Math.max(...years);
+        const previousYear = currentYear - 1;
+        let currentQuarter=null,currentValue=null;
+        for (const q of ['Q4','Q3','Q2','Q1']) { const v = byYQK.get(`${currentYear}-${q}-${key}`); if (v!=null){ currentQuarter=q; currentValue=v; break; } }
+        let prevQuarter=null,prevValue=null;
+        for (const q of ['Q4','Q3','Q2','Q1']) { const v = byYQK.get(`${previousYear}-${q}-${key}`); if (v!=null){ prevQuarter=q; prevValue=v; break; } }
+        if (currentValue!=null && prevValue!=null){
+          const curIdx=qIndex(currentQuarter), prevIdx=qIndex(prevQuarter);
+          const currentProvisional=currentQuarter!=='Q4';
+          const prevProvisional=prevQuarter!=='Q4';
+          let adjCurrent=currentValue, adjPrev=prevValue;
+          if (currentProvisional && !prevProvisional) adjPrev = prevValue * (curIdx/4);
+          else if (!currentProvisional && prevProvisional) adjCurrent = currentValue * (prevIdx/4);
+          else if (currentProvisional && prevProvisional){
+            const f=Math.min(curIdx, prevIdx);
+            if (curIdx!==f) adjCurrent = currentValue * (f/curIdx);
+            if (prevIdx!==f) adjPrev = prevValue * (f/prevIdx);
+          }
+          return computeDiagnosis(adjPrev, adjCurrent);
+        }
+        return 'yellow';
+      } else {
+        const chronological=[]; for (const y of years) for (const q of quarters) chronological.push({ y, q });
+        chronological.sort((a,b)=> a.y - b.y || quarters.indexOf(a.q)-quarters.indexOf(b.q));
+        const vals=[]; for (const step of chronological){ const v = byYQK.get(`${step.y}-${step.q}-${key}`); if (v!=null) vals.push({ y:step.y, q:step.q, v }); }
+        if (vals.length>=2) return computeDiagnosis(vals[vals.length-2].v, vals[vals.length-1].v);
+        return 'yellow';
+      }
+    }
+    const diagKey = currentDiagnoseColor();
+  const PAL = getPalette();
+  const palette = PAL[diagKey] || PAL.neutral;
+    const yearColor = y => (y === 2025 ? palette.dark : palette.light);
 
     let series; // used for legend items
     let citBarsData = null; // used only for CIT rendering & scales
@@ -196,36 +286,40 @@
       }));
       legendLatestYear = Math.max(...years);
     } else {
-      // CIT: annual axis, up to last 4 available years (now and previous 3)
-      const axisYears = computeCITYears(jsonRows); // last up to 4 years
-      const latestYear = axisYears.length ? axisYears[axisYears.length - 1] : null;
+      // CIT: always show current year and previous 3 years (total 4). Use 0 if no data.
+      const currentYear = Math.max(...years);
+      const axisYears = [currentYear - 3, currentYear - 2, currentYear - 1, currentYear];
+      const latestYear = currentYear;
       legendLatestYear = latestYear;
 
-      citBarsData = axisYears.map(y => {
+  citBarsData = axisYears.map(y => {
         const picked = pickCITForYear(byYQK, y);
-        if (!picked) return null;
+        if (picked) {
+          return {
+            x: String(y),
+            year: y,
+            value: picked.value,
+            quarter: picked.quarter,
+            provisional: picked.provisional,
+    color: (y === latestYear ? palette.dark : palette.light)
+          };
+        }
+        // No data: show zero, mark as provisional with Q4 (treated final but zero)
         return {
           x: String(y),
-          year: y,
-          value: picked.value,
-          quarter: picked.quarter,
-          provisional: picked.provisional,
-          color: (y === latestYear ? BRAND.now : BRAND.last)
+            year: y,
+            value: 0,
+            quarter: 'Q4',
+            provisional: false,
+    color: (y === latestYear ? palette.dark : palette.light)
         };
-      }).filter(Boolean);
+      });
 
-      // x-domain uses only years we have data for
       x.domain(citBarsData.map(d => d.x));
 
-      // Legend: always include 'This year'; include 'Last year/recent years' only if there is at least one prior year
-      if (latestYear != null) {
-        series = [{ year: latestYear, key, color: BRAND.now, data: [] }];
-        if ((citBarsData || []).some(d => d.year !== latestYear)) {
-          series.push({ year: latestYear - 1, key, color: BRAND.last, data: [] });
-        }
-      } else {
-        series = [];
-      }
+      // Legend: always include this year and at least one prior year reference
+  series = [{ year: latestYear, key, color: palette.dark, data: [] }];
+  series.push({ year: latestYear - 1, key, color: palette.light, data: [] });
     }
 
     // Update Y for the active key across all years
@@ -578,17 +672,46 @@
   // Compute diagnose color per tab independently (based on its own latest vs previous values)
   tabs.selectAll('.tab').each(function(d){
     const key = d.key;
-    const chronological = [];
-    for (const y of years) for (const q of quarters) chronological.push({ y, q });
-    chronological.sort((a,b)=> a.y - b.y || quarters.indexOf(a.q) - quarters.indexOf(b.q));
-    const vals = [];
-    for (const step of chronological){
-      const v = byYQK.get(`${step.y}-${step.q}-${key}`);
-      if (v != null) vals.push({ y: step.y, q: step.q, v });
-    }
     let color = 'yellow';
-    if (vals.length >= 2){
-      color = computeDiagnosis(vals[vals.length-2].v, vals[vals.length-1].v);
+    if (key === 'CIT') {
+      // Use proportional annual comparison consistent with summary logic
+      function qIndex(q){ return ['Q1','Q2','Q3','Q4'].indexOf(q) + 1; }
+      const currentYear = Math.max(...years);
+      const previousYear = currentYear - 1;
+      // Latest quarters
+      let currentQuarter=null,currentValue=null;
+      for (const q of ['Q4','Q3','Q2','Q1']) { const v = byYQK.get(`${currentYear}-${q}-CIT`); if (v!=null){ currentQuarter=q; currentValue=v; break; } }
+      let prevQuarter=null,prevValue=null;
+      for (const q of ['Q4','Q3','Q2','Q1']) { const v = byYQK.get(`${previousYear}-${q}-CIT`); if (v!=null){ prevQuarter=q; prevValue=v; break; } }
+      if (currentValue != null && prevValue != null){
+        const curIdx = qIndex(currentQuarter); const prevIdx = qIndex(prevQuarter);
+        const currentProvisional = currentQuarter !== 'Q4';
+        const prevProvisional = prevQuarter !== 'Q4';
+        let adjCurrent = currentValue; let adjPrev = prevValue;
+        if (currentProvisional && !prevProvisional){
+          adjPrev = prevValue * (curIdx / 4);
+        } else if (!currentProvisional && prevProvisional){
+          adjCurrent = currentValue * (prevIdx / 4);
+        } else if (currentProvisional && prevProvisional){
+          const f = Math.min(curIdx, prevIdx);
+            if (curIdx !== f) adjCurrent = currentValue * (f / curIdx);
+            if (prevIdx !== f) adjPrev = prevValue * (f / prevIdx);
+        }
+        color = computeDiagnosis(adjPrev, adjCurrent);
+      }
+    } else {
+      // Original logic for PIT/VAT (latest two raw quarterly values)
+      const chronological = [];
+      for (const y of years) for (const q of quarters) chronological.push({ y, q });
+      chronological.sort((a,b)=> a.y - b.y || quarters.indexOf(a.q) - quarters.indexOf(b.q));
+      const vals = [];
+      for (const step of chronological){
+        const v = byYQK.get(`${step.y}-${step.q}-${key}`);
+        if (v != null) vals.push({ y: step.y, q: step.q, v });
+      }
+      if (vals.length >= 2){
+        color = computeDiagnosis(vals[vals.length-2].v, vals[vals.length-1].v);
+      }
     }
     d3.select(this)
       .classed('diag-yellow', color === 'yellow')
